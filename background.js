@@ -32,16 +32,29 @@ chrome.webRequest.onSendHeaders.addListener(
         // Store request headers for streamContent URLs
         if (details.url.includes('streamContent')) {
             console.log('Capturing headers for streamContent request');
+            console.log('All available headers:', details.requestHeaders.map(h => h.name));
             
             // Save headers for later use
             const requestHeaders = {};
             details.requestHeaders.forEach(header => {
+                // Case-insensitive header matching
+                const headerLower = header.name.toLowerCase();
+                
                 // Include all headers that might be needed for authentication
-                if (HEADERS_TO_INCLUDE.includes(header.name.toLowerCase())) {
+                if (HEADERS_TO_INCLUDE.some(h => h.toLowerCase() === headerLower)) {
                     requestHeaders[header.name] = header.value;
                     console.log(`Stored header: ${header.name}`);
                 }
+                
+                // Always include these critical headers regardless of the include list
+                if (headerLower === 'authorization' || headerLower === 'cookie') {
+                    requestHeaders[header.name] = header.value;
+                    console.log(`Stored critical header: ${header.name}`);
+                }
             });
+            
+            // Log the total number of headers stored
+            console.log(`Total headers stored: ${Object.keys(requestHeaders).length}`);
             
             // Store temporarily with URL as key
             requestHeadersStore[details.url] = requestHeaders;
@@ -86,6 +99,9 @@ chrome.webRequest.onCompleted.addListener(
                         });
                     }
                     
+                    // Log all headers being sent with the request
+                    console.log('Headers being sent with fetch request:', headers);
+                    
                     // Try to fetch the content directly with all the necessary headers
                     console.log('Attempting to fetch content with stored headers');
                     const response = await fetch(details.url, {
@@ -95,10 +111,18 @@ chrome.webRequest.onCompleted.addListener(
                         cache: 'no-store'
                     });
                     
+                    // Log the response status and headers
+                    console.log('Fetch response status:', response.status);
+                    console.log('Fetch response headers:', response.headers);
+                    
                     if (response.ok) {
                         const contentType = response.headers.get('content-type');
                         if (contentType && contentType.includes('application/json')) {
                             const jsonResponse = await response.json();
+                            
+                            // Log the full response for debugging
+                            console.log('Full JSON response:', jsonResponse);
+                            
                             latestResponse.content = JSON.stringify(jsonResponse);
                             
                             // Check if this is a transcript response
@@ -106,6 +130,11 @@ chrome.webRequest.onCompleted.addListener(
                                 latestResponse.isTranscript = true;
                                 latestResponse.entryCount = jsonResponse.entries.length;
                                 console.log(`Transcript captured with ${jsonResponse.entries.length} entries`);
+                                
+                                // Log a sample entry for debugging
+                                if (jsonResponse.entries.length > 0) {
+                                    console.log('Sample transcript entry:', jsonResponse.entries[0]);
+                                }
                             }
                         } else {
                             latestResponse.content = await response.text();
@@ -120,6 +149,11 @@ chrome.webRequest.onCompleted.addListener(
                     latestResponse.fetchError = true;
                     
                     console.error('Fetch error:', fetchError);
+                    console.error('Fetch error details:', {
+                        message: fetchError.message,
+                        stack: fetchError.stack,
+                        url: details.url
+                    });
                 }
             } catch (error) {
                 console.error('Error processing request:', error);
