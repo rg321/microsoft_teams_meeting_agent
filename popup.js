@@ -125,28 +125,22 @@ document.addEventListener('DOMContentLoaded', function() {
     function updateDisplay() {
         if (!currentResponse || !currentResponse.content) {
             responseContentElement.textContent = 'No content available';
-            console.log('No content available to display');
             return;
         }
 
         try {
-            console.log('Updating display with view:', currentView);
-            
             if (currentView === 'transcript') {
-                console.log('Formatting transcript view');
                 // Parse the JSON and format as transcript
                 responseContentElement.innerHTML = formatTranscript(currentResponse.content);
                 transcriptViewButton.classList.add('active');
                 rawViewButton.classList.remove('active');
             } else {
-                console.log('Formatting raw JSON view');
                 // Show raw JSON with syntax highlighting
                 const formattedContent = formatJSON(currentResponse.content);
                 responseContentElement.innerHTML = syntaxHighlight(formattedContent);
                 transcriptViewButton.classList.remove('active');
                 rawViewButton.classList.add('active');
             }
-            console.log('Display updated successfully');
         } catch (e) {
             console.error('Error updating display:', e);
             responseContentElement.textContent = 'Error displaying content: ' + e.message;
@@ -161,9 +155,6 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        // Log the response received from background for debugging
-        console.log('Response received in popup:', response);
-
         if (response && response.url) {
             currentResponse = response;
             
@@ -175,24 +166,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 responseTimeElement.textContent = 'Captured: ' + new Date(response.timestamp).toLocaleString();
             }
             
-            // Log the content for debugging
-            console.log('Content type:', typeof response.content);
-            console.log('Content preview:', response.content ? response.content.substring(0, 100) + '...' : 'No content');
-            
             // Check if this is a transcript and set default view
             try {
                 const data = JSON.parse(response.content);
-                console.log('Successfully parsed JSON data');
                 if (data.entries && Array.isArray(data.entries)) {
-                    console.log(`Found ${data.entries.length} transcript entries`);
                     currentView = 'transcript';
                 } else {
-                    console.log('No transcript entries found in the data');
                     currentView = 'raw';
                 }
             } catch (e) {
                 console.error('Error parsing JSON:', e);
-                console.log('Raw content:', response.content);
                 currentView = 'raw';
             }
             
@@ -244,6 +227,31 @@ document.addEventListener('DOMContentLoaded', function() {
         refreshButton.addEventListener('click', () => {
             responseContentElement.textContent = 'Loading...';
             location.reload();
+        });
+    }
+    
+    // Add capture new button functionality
+    const captureNewButton = document.getElementById('capture-new-button');
+    if (captureNewButton) {
+        captureNewButton.addEventListener('click', () => {
+            // Send message to background script to reset capture flag
+            chrome.runtime.sendMessage({ action: 'resetCapture' }, (response) => {
+                if (response && response.success) {
+                    // Show status message
+                    responseContentElement.textContent = 'Capture flag reset. Navigate to a Teams meeting page with transcripts to capture new content.';
+                    
+                    // Update button text temporarily
+                    const originalText = captureNewButton.textContent;
+                    captureNewButton.textContent = 'Ready!';
+                    captureNewButton.disabled = true;
+                    
+                    // Reset button after 2 seconds
+                    setTimeout(() => {
+                        captureNewButton.textContent = originalText;
+                        captureNewButton.disabled = false;
+                    }, 2000);
+                }
+            });
         });
     }
 });

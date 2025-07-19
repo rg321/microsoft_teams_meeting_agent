@@ -67,9 +67,16 @@
             border-radius: 4px;
             cursor: pointer;
             font-size: 13px;
+            margin-left: 5px;
         }
         button:hover {
             background-color: #3367d6;
+        }
+        #capture-new-button {
+            background-color: #34a853;
+        }
+        #capture-new-button:hover {
+            background-color: #2d9249;
         }
         .status {
             font-style: italic;
@@ -80,7 +87,10 @@
 <body>
     <h3>
         <span>Teams Transcript Viewer</span>
-        <button id="refresh-button">Refresh</button>
+        <div>
+            <button id="capture-new-button">Capture New</button>
+            <button id="refresh-button">Refresh</button>
+        </div>
     </h3>
     <div id="response-url"></div>
     <div id="response-time"></div>

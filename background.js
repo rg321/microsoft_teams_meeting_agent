@@ -1,3 +1,6 @@
+// Flag to track if we've already processed a streamContent request
+let hasProcessedStreamContent = false;
+
 // Store the latest captured response
 let latestResponse = {
     url: '',
@@ -31,9 +34,6 @@ chrome.webRequest.onSendHeaders.addListener(
     function(details) {
         // Store request headers for streamContent URLs
         if (details.url.includes('streamContent')) {
-            console.log('Capturing headers for streamContent request');
-            console.log('All available headers:', details.requestHeaders.map(h => h.name));
-            
             // Save headers for later use
             const requestHeaders = {};
             details.requestHeaders.forEach(header => {
@@ -43,18 +43,13 @@ chrome.webRequest.onSendHeaders.addListener(
                 // Include all headers that might be needed for authentication
                 if (HEADERS_TO_INCLUDE.some(h => h.toLowerCase() === headerLower)) {
                     requestHeaders[header.name] = header.value;
-                    console.log(`Stored header: ${header.name}`);
                 }
                 
                 // Always include these critical headers regardless of the include list
                 if (headerLower === 'authorization' || headerLower === 'cookie') {
                     requestHeaders[header.name] = header.value;
-                    console.log(`Stored critical header: ${header.name}`);
                 }
             });
-            
-            // Log the total number of headers stored
-            console.log(`Total headers stored: ${Object.keys(requestHeaders).length}`);
             
             // Store temporarily with URL as key
             requestHeadersStore[details.url] = requestHeaders;
@@ -72,9 +67,12 @@ chrome.webRequest.onSendHeaders.addListener(
 // Listen for completed web requests
 chrome.webRequest.onCompleted.addListener(
     async function(details) {
-        // Check if the URL contains 'streamContent'
-        if (details.url.includes('streamContent')) {
-            console.log('Stream Content detected:', details.url);
+        // Check if the URL contains 'streamContent' and we haven't processed one yet
+        if (details.url.includes('streamContent') && !hasProcessedStreamContent) {
+            // Set flag to prevent processing additional requests
+            hasProcessedStreamContent = true;
+            
+            console.log('Stream Content detected (processing this request only):', details.url);
             console.log('Response status:', details.statusCode);
             
             try {
@@ -99,11 +97,7 @@ chrome.webRequest.onCompleted.addListener(
                         });
                     }
                     
-                    // Log all headers being sent with the request
-                    console.log('Headers being sent with fetch request:', headers);
-                    
                     // Try to fetch the content directly with all the necessary headers
-                    console.log('Attempting to fetch content with stored headers');
                     const response = await fetch(details.url, {
                         method: 'GET',
                         credentials: 'include',
@@ -111,17 +105,10 @@ chrome.webRequest.onCompleted.addListener(
                         cache: 'no-store'
                     });
                     
-                    // Log the response status and headers
-                    console.log('Fetch response status:', response.status);
-                    console.log('Fetch response headers:', response.headers);
-                    
                     if (response.ok) {
                         const contentType = response.headers.get('content-type');
                         if (contentType && contentType.includes('application/json')) {
                             const jsonResponse = await response.json();
-                            
-                            // Log the full response for debugging
-                            console.log('Full JSON response:', jsonResponse);
                             
                             latestResponse.content = JSON.stringify(jsonResponse);
                             
@@ -131,10 +118,6 @@ chrome.webRequest.onCompleted.addListener(
                                 latestResponse.entryCount = jsonResponse.entries.length;
                                 console.log(`Transcript captured with ${jsonResponse.entries.length} entries`);
                                 
-                                // Log a sample entry for debugging
-                                if (jsonResponse.entries.length > 0) {
-                                    console.log('Sample transcript entry:', jsonResponse.entries[0]);
-                                }
                             }
                         } else {
                             latestResponse.content = await response.text();
@@ -165,10 +148,15 @@ chrome.webRequest.onCompleted.addListener(
     ["responseHeaders"]
 );
 
-// Function to get the latest response (will be called from popup)
+// Function to handle messages from popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'getLatestResponse') {
         sendResponse(latestResponse);
+    } else if (request.action === 'resetCapture') {
+        // Reset the flag to allow capturing a new request
+        hasProcessedStreamContent = false;
+        console.log('Capture flag reset - ready to capture next streamContent request');
+        sendResponse({success: true});
     }
     return true; // Keep the message channel open for async response
 });
