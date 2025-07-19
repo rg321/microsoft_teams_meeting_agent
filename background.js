@@ -13,7 +13,17 @@ const HEADERS_TO_INCLUDE = [
     'authorization',
     'cookie',
     'x-requestdigest',
-    'x-clientservice-clienttag'
+    'x-clientservice-clienttag',
+    'accept',
+    'accept-language',
+    'application',
+    'priority',
+    'referer',
+    'scenario',
+    'type',
+    'user-agent',
+    'x-ms-client-request-id',
+    'x-requeststats'
 ];
 
 // Listen for web requests before they're sent
@@ -21,11 +31,15 @@ chrome.webRequest.onSendHeaders.addListener(
     function(details) {
         // Store request headers for streamContent URLs
         if (details.url.includes('streamContent')) {
+            console.log('Capturing headers for streamContent request');
+            
             // Save headers for later use
             const requestHeaders = {};
             details.requestHeaders.forEach(header => {
+                // Include all headers that might be needed for authentication
                 if (HEADERS_TO_INCLUDE.includes(header.name.toLowerCase())) {
                     requestHeaders[header.name] = header.value;
+                    console.log(`Stored header: ${header.name}`);
                 }
             });
             
@@ -38,7 +52,7 @@ chrome.webRequest.onSendHeaders.addListener(
             }, 30000);
         }
     },
-    { urls: ["*://*.sharepoint.com/*"] },
+    { urls: ["*://*.sharepoint.com/*", "*://*.microsoft.com/*"] },
     ["requestHeaders"]
 );
 
@@ -48,6 +62,7 @@ chrome.webRequest.onCompleted.addListener(
         // Check if the URL contains 'streamContent'
         if (details.url.includes('streamContent')) {
             console.log('Stream Content detected:', details.url);
+            console.log('Response status:', details.statusCode);
             
             try {
                 // Store URL and timestamp immediately
@@ -63,18 +78,21 @@ chrome.webRequest.onCompleted.addListener(
                     // Clean up stored headers
                     delete requestHeadersStore[details.url];
                     
-                    // Try to extract content from response headers first
+                    // Store response headers but don't include them in the content
+                    latestResponse.headers = {};
                     if (details.responseHeaders) {
-                        latestResponse.content += 'Response Headers:\n' + 
-                            details.responseHeaders.map(h => `${h.name}: ${h.value}`).join('\n') + '\n\n';
+                        details.responseHeaders.forEach(h => {
+                            latestResponse.headers[h.name] = h.value;
+                        });
                     }
                     
-                    // Try to fetch the content directly
-                    // Note: This might not work for authenticated requests
+                    // Try to fetch the content directly with all the necessary headers
+                    console.log('Attempting to fetch content with stored headers');
                     const response = await fetch(details.url, {
                         method: 'GET',
                         credentials: 'include',
-                        headers: headers
+                        headers: headers,
+                        cache: 'no-store'
                     });
                     
                     if (response.ok) {
@@ -82,6 +100,13 @@ chrome.webRequest.onCompleted.addListener(
                         if (contentType && contentType.includes('application/json')) {
                             const jsonResponse = await response.json();
                             latestResponse.content = JSON.stringify(jsonResponse);
+                            
+                            // Check if this is a transcript response
+                            if (jsonResponse && jsonResponse.entries && Array.isArray(jsonResponse.entries)) {
+                                latestResponse.isTranscript = true;
+                                latestResponse.entryCount = jsonResponse.entries.length;
+                                console.log(`Transcript captured with ${jsonResponse.entries.length} entries`);
+                            }
                         } else {
                             latestResponse.content = await response.text();
                         }
@@ -91,13 +116,8 @@ chrome.webRequest.onCompleted.addListener(
                         console.error('Error fetching content:', response.status, response.statusText);
                     }
                 } catch (fetchError) {
-                    latestResponse.content = `Note: Could not fetch full response content. This is normal for authenticated requests.\n\n`;
-                    latestResponse.content += `The extension detected a streamContent request at:\n${details.url}\n\n`;
-                    latestResponse.content += `To view the actual content, you can:\n`;
-                    latestResponse.content += `1. Open browser DevTools (F12)\n`;
-                    latestResponse.content += `2. Go to the Network tab\n`;
-                    latestResponse.content += `3. Filter for "streamContent"\n`;
-                    latestResponse.content += `4. Click on the request and view the Response tab\n\n`;
+                    latestResponse.content = `{"error": "Could not fetch full response content. This is normal for authenticated requests."}`;
+                    latestResponse.fetchError = true;
                     
                     console.error('Fetch error:', fetchError);
                 }

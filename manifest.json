@@ -1,20 +1,23 @@
 {
   "manifest_version": 3,
-  "name": "Teams Transcript Listener",
+  "name": "Teams Transcript Viewer",
   "version": "1.0",
+  "description": "Captures and displays Microsoft Teams meeting transcripts",
   "permissions": [
     "webRequest",
     "tabs",
-    "cookies"
+    "cookies",
+    "clipboardWrite"
   ],
   "host_permissions": [
-    "*://*.sharepoint.com/*"
+    "*://*.sharepoint.com/*",
+    "*://*.microsoft.com/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "View Stream Content"
+    "default_title": "View Teams Transcript"
   }
 }

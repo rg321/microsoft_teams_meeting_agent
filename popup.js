@@ -3,6 +3,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const responseUrlElement = document.getElementById('response-url');
     const responseTimeElement = document.getElementById('response-time');
     const responseContentElement = document.getElementById('response-content');
+    const transcriptViewButton = document.getElementById('transcript-view');
+    const rawViewButton = document.getElementById('raw-view');
+    const copyButton = document.getElementById('copy-button');
 
     // Function to format JSON for better display
     function formatJSON(jsonString) {
@@ -38,7 +41,42 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Add CSS for syntax highlighting
+    // Function to format transcript entries
+    function formatTranscript(jsonString) {
+        try {
+            const data = JSON.parse(jsonString);
+            
+            if (!data.entries || !Array.isArray(data.entries) || data.entries.length === 0) {
+                return '<p>No transcript entries found in the response.</p>';
+            }
+            
+            let html = '<div class="transcript">';
+            
+            data.entries.forEach(entry => {
+                const speaker = entry.speakerDisplayName || 'Unknown Speaker';
+                const startTime = entry.startOffset || '00:00:00';
+                const text = entry.text || '';
+                
+                html += `
+                    <div class="transcript-entry">
+                        <div class="transcript-header">
+                            <span class="speaker">${speaker}</span>
+                            <span class="timestamp">${startTime}</span>
+                        </div>
+                        <div class="transcript-text">${text}</div>
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+            return html;
+            
+        } catch (e) {
+            return '<p>Error parsing transcript data: ' + e.message + '</p>';
+        }
+    }
+
+    // Add CSS for syntax highlighting and transcript
     const style = document.createElement('style');
     style.textContent = `
         .string { color: green; }
@@ -46,8 +84,67 @@ document.addEventListener('DOMContentLoaded', function() {
         .boolean { color: blue; }
         .null { color: magenta; }
         .key { color: red; }
+        
+        .transcript-entry {
+            margin-bottom: 12px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 8px;
+        }
+        .transcript-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+        .speaker {
+            font-weight: bold;
+            color: #2c5282;
+        }
+        .timestamp {
+            color: #718096;
+            font-size: 0.9em;
+        }
+        .transcript-text {
+            line-height: 1.4;
+        }
+        .view-buttons {
+            margin-bottom: 10px;
+        }
+        .view-buttons button {
+            margin-right: 5px;
+        }
+        .active {
+            background-color: #3367d6;
+        }
     `;
     document.head.appendChild(style);
+
+    let currentResponse = null;
+    let currentView = 'transcript';
+
+    // Function to update the display based on the current view
+    function updateDisplay() {
+        if (!currentResponse || !currentResponse.content) {
+            responseContentElement.textContent = 'No content available';
+            return;
+        }
+
+        try {
+            if (currentView === 'transcript') {
+                // Parse the JSON and format as transcript
+                responseContentElement.innerHTML = formatTranscript(currentResponse.content);
+                transcriptViewButton.classList.add('active');
+                rawViewButton.classList.remove('active');
+            } else {
+                // Show raw JSON with syntax highlighting
+                const formattedContent = formatJSON(currentResponse.content);
+                responseContentElement.innerHTML = syntaxHighlight(formattedContent);
+                transcriptViewButton.classList.remove('active');
+                rawViewButton.classList.add('active');
+            }
+        } catch (e) {
+            responseContentElement.textContent = 'Error displaying content: ' + e.message;
+        }
+    }
 
     // Request the latest response from the background script
     chrome.runtime.sendMessage({ action: 'getLatestResponse' }, (response) => {
@@ -57,6 +154,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         if (response && response.url) {
+            currentResponse = response;
+            
             // Display the URL
             responseUrlElement.textContent = response.url;
             
@@ -65,22 +164,59 @@ document.addEventListener('DOMContentLoaded', function() {
                 responseTimeElement.textContent = 'Captured: ' + new Date(response.timestamp).toLocaleString();
             }
             
-            // Display the content, formatted and highlighted if it's JSON
+            // Check if this is a transcript and set default view
             try {
-                const formattedContent = formatJSON(response.content);
-                // Try to detect if it's JSON
-                if (response.content.trim().startsWith('{') || response.content.trim().startsWith('[')) {
-                    responseContentElement.innerHTML = syntaxHighlight(formattedContent);
+                const data = JSON.parse(response.content);
+                if (data.entries && Array.isArray(data.entries)) {
+                    currentView = 'transcript';
                 } else {
-                    responseContentElement.textContent = formattedContent;
+                    currentView = 'raw';
                 }
             } catch (e) {
-                responseContentElement.textContent = response.content;
+                currentView = 'raw';
             }
+            
+            // Update the display
+            updateDisplay();
+            
         } else {
             responseContentElement.textContent = 'No stream content has been captured yet. Navigate to a Teams meeting page and refresh to capture content.';
         }
     });
+
+    // Add view toggle button functionality
+    if (transcriptViewButton) {
+        transcriptViewButton.addEventListener('click', () => {
+            currentView = 'transcript';
+            updateDisplay();
+        });
+    }
+    
+    if (rawViewButton) {
+        rawViewButton.addEventListener('click', () => {
+            currentView = 'raw';
+            updateDisplay();
+        });
+    }
+    
+    // Add copy button functionality
+    if (copyButton) {
+        copyButton.addEventListener('click', () => {
+            if (!currentResponse || !currentResponse.content) return;
+            
+            try {
+                navigator.clipboard.writeText(currentResponse.content).then(() => {
+                    const originalText = copyButton.textContent;
+                    copyButton.textContent = 'Copied!';
+                    setTimeout(() => {
+                        copyButton.textContent = originalText;
+                    }, 1500);
+                });
+            } catch (e) {
+                console.error('Failed to copy:', e);
+            }
+        });
+    }
 
     // Add refresh button functionality
     const refreshButton = document.getElementById('refresh-button');
